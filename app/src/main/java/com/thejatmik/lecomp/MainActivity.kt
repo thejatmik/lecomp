@@ -1,103 +1,132 @@
 package com.thejatmik.lecomp
 
 import android.os.Bundle
-import android.widget.ImageView
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import android.hardware.SensorManager
 import android.hardware.Sensor
 import android.hardware.SensorEventListener
 import android.hardware.SensorEvent
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Card
+import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalContext
 
-class MainActivity : ComponentActivity(), SensorEventListener {
-    private var compassImage: ImageView? = null
-    private var sensorManager: SensorManager? = null
-    private var magnetometer: Sensor? = null
-    private var accelerometer: Sensor? = null
-    private var lastMagnetometer: FloatArray = FloatArray(3)
-    private var lastAccelerometer: FloatArray = FloatArray(3)
-    private var lastMagnetometerSet: Boolean = false
-    private var lastAccelerometerSet: Boolean = false
-    private var rotationMatrix: FloatArray = FloatArray(9)
-    private var orientation: FloatArray = FloatArray(3)
+data class RotationState(val pitch: Float, val roll: Float)
 
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContentView(R.layout.activity_main)
-
-        /*
-         */
-        compassImage = findViewById(R.id.compass)
-        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        // enableEdgeToEdge()
+        setContent { this.LoadUI() }
     }
 
-    override fun onResume() {
-        super.onResume()
-        /*
-         */
-        sensorManager?.registerListener(
-            this,
-            magnetometer,
-            SensorManager.SENSOR_DELAY_GAME
-        )
-        sensorManager?.registerListener(
-            this,
-            accelerometer,
-            SensorManager.SENSOR_DELAY_GAME
-        )
-    }
+    @Composable
+    @Preview
+    fun LoadUI() {
+        // https://gist.github.com/Pooh3Mobi/f63ac9c808712504b3cb8c75881da958
+        val rotationState = remember { mutableStateOf(RotationState(0f, 0f)) }
+        val azimuth = remember { mutableFloatStateOf(0f) }
 
-    override fun onPause() {
-        super.onPause()
-        /*
-         */
-        sensorManager?.unregisterListener(this, magnetometer)
-        sensorManager?.unregisterListener(this, accelerometer)
-    }
+        val sensorManager = LocalContext.current.getSystemService(SENSOR_SERVICE) as SensorManager
+        val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-    override fun onSensorChanged(event: SensorEvent?) {
-        if (event?.values == null) {
-            return
+        val rotationMatrix = FloatArray(9)
+        val orientationAngles = FloatArray(3)
+        val accelerometerReading = FloatArray(3)
+        val magnetometerReading = FloatArray(3)
+
+        val accelerometerListener = object : SensorEventListener {
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.let {
+                    System.arraycopy(it.values, 0, accelerometerReading, 0, accelerometerReading.size)
+                    SensorManager.getRotationMatrix(
+                        rotationMatrix,
+                        null,
+                        accelerometerReading,
+                        magnetometerReading
+                    )
+                    SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                    rotationState.value = RotationState(
+                        pitch = Math.toDegrees(orientationAngles[1].toDouble()).toFloat(),
+                        roll = Math.toDegrees(orientationAngles[2].toDouble()).toFloat()
+                    )
+                    val azimuthInRadians: Double = orientationAngles[0].toDouble()
+                    azimuth.floatValue = (Math.toDegrees(azimuthInRadians).toFloat() + 360) % 360
+                }
+            }
         }
-        if (event.sensor == magnetometer) {
-            System.arraycopy(
-                event.values,
-                0,
-                lastMagnetometer,
-                0,
-                event.values.size
-            )
-            lastMagnetometerSet = true
-        } else if (event.sensor == accelerometer) {
-            System.arraycopy(
-                event.values,
-                0,
-                lastAccelerometer,
-                0,
-                event.values.size
-            )
-            lastAccelerometerSet = true
+        val magnetometerListener = object : SensorEventListener {
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.let {
+                    System.arraycopy(it.values, 0, magnetometerReading, 0, magnetometerReading.size)
+                    SensorManager.getRotationMatrix(
+                        rotationMatrix,
+                        null,
+                        accelerometerReading,
+                        magnetometerReading,
+                    )
+                    SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                    rotationState.value = RotationState(
+                        pitch = Math.toDegrees(orientationAngles[1].toDouble()).toFloat(),
+                        roll = Math.toDegrees(orientationAngles[2].toDouble()).toFloat(),
+                    )
+                    val azimuthInRadians: Double = orientationAngles[0].toDouble()
+                    azimuth.floatValue = (Math.toDegrees(azimuthInRadians).toFloat() + 360) % 360
+                }
+            }
         }
 
-        if (lastAccelerometerSet && lastMagnetometerSet) {
-            SensorManager.getRotationMatrix(
-                rotationMatrix,
-                null,
-                lastAccelerometer,
-                lastMagnetometer
+        // like useEffect onRender?
+        LaunchedEffect(Unit) {
+            sensorManager.registerListener(
+                accelerometerListener,
+                accelerometer,
+                SensorManager.SENSOR_DELAY_GAME,
+                //SensorManager.SENSOR_DELAY_UI
             )
-            SensorManager.getOrientation(rotationMatrix, orientation)
+            sensorManager.registerListener(
+                magnetometerListener,
+                magnetometer,
+                SensorManager.SENSOR_DELAY_GAME,
+                //SensorManager.SENSOR_DELAY_UI
+            )
+        }
 
-            val azimuthInRadians: Double = orientation[0].toDouble()
-            val azimuthInDegrees: Float = (Math.toDegrees(azimuthInRadians).toFloat() + 360) % 360
+        DisposableEffect(Unit) {
+            onDispose {
+                sensorManager.unregisterListener(accelerometerListener)
+                sensorManager.unregisterListener(magnetometerListener)
+            }
+        }
 
-            val mCompassImage = findViewById<ImageView>(R.id.compass)
-            mCompassImage.rotation = -azimuthInDegrees
+        Card (modifier = Modifier.fillMaxHeight().padding(24.dp)) {
+            Image(
+                painter = painterResource(R.drawable.compass),
+                contentDescription = "",
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier.fillMaxWidth().rotate(-azimuth.floatValue)
+            )
+            Text(modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, text = "azimuth: ${azimuth.floatValue}")
         }
     }
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { }
 }
